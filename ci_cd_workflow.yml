@@ -45,6 +45,10 @@ jobs:
   ml-prediction-gate:
     needs: extract-metadata
     runs-on: ubuntu-latest
+
+    # Optional: Use cloud API if prediction endpoint is configured
+    env:
+      PREDICTION_API_URL: ${{ secrets.PREDICTION_API_URL }}
     outputs:
       prediction: ${{ steps.predict.outputs.prediction }}
       risk_level: ${{ steps.predict.outputs.risk_level }}
@@ -62,7 +66,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Call Cloud Prediction API (optional)
+        id: cloud-predict
+        if: env.PREDICTION_API_URL != ''
+        run: |
+          response=$(curl -s -X POST "${{ secrets.PREDICTION_API_URL }}/predict" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.PREDICTION_API_KEY }}" \
+            -d '{
+              "commit_size": ${{ needs.extract-metadata.outputs.commit_size }},
+              "files_changed": ${{ needs.extract-metadata.outputs.files_changed }},
+              "test_coverage": 82.5,
+              "past_failures": 1,
+              "dependency_changes": 0,
+              "author_experience": 100,
+              "time_of_commit": 14,
+              "build_time": 320.0
+            }')
+
+          echo "Cloud API response: $response"
+          prediction=$(echo "$response" | jq -r '.prediction')
+          risk_level=$(echo "$response" | jq -r '.risk_level')
+
+          echo "prediction=$prediction" >> $GITHUB_OUTPUT
+          echo "risk_level=$risk_level" >> $GITHUB_OUTPUT
+
       - name: Run ML Prediction
+        if: steps.cloud-predict.outputs.prediction == ''
         id: predict
         run: |
           python << 'EOF'
@@ -133,8 +163,8 @@ jobs:
 
       - name: Decision Gate
         run: |
-          PREDICTION="${{ steps.predict.outputs.prediction }}"
-          RISK_LEVEL="${{ steps.predict.outputs.risk_level }}"
+          PREDICTION="${{ steps.cloud-predict.outputs.prediction || steps.predict.outputs.prediction }}"
+          RISK_LEVEL="${{ steps.cloud-predict.outputs.risk_level || steps.predict.outputs.risk_level }}"
           
           echo "🔮 ML Pipeline Decision Gate"
           echo "Prediction: $PREDICTION"

@@ -1,0 +1,217 @@
+name: Deploy to Kubernetes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app.py'
+      - 'requirements.txt'
+      - 'Dockerfile'
+      - 'k8s/**'
+      - 'helm/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      namespace:
+        description: 'Kubernetes namespace'
+        required: false
+        default: 'ml-cicd-predictor'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/ml-cicd-predictor
+
+jobs:
+  # ========== Build and Push Container Image ==========
+  build-image:
+    name: Build Container Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=semver,pattern={{version}}
+
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # ========== Deploy with Helm ==========
+  deploy-helm:
+    name: Deploy with Helm
+    runs-on: ubuntu-latest
+    needs: build-image
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    environment:
+      name: ${{ inputs.environment || 'dev' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Kubernetes tools
+      uses: azure/setup-kubectl@v4
+      with:
+        version: 'latest'
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v4
+      with:
+        version: 'v3.14.0'
+
+    - name: Configure Kubernetes context
+      run: |
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+
+    - name: Verify cluster connection
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl cluster-info
+        kubectl get nodes
+
+    - name: Create namespace if not exists
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl create namespace ${{ inputs.namespace || 'ml-cicd-predictor' }} --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Create secret for API keys
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl create secret generic api-secrets \
+          --from-literal=groq-api-key=${{ secrets.GROQ_API_KEY }} \
+          --namespace=${{ inputs.namespace || 'ml-cicd-predictor' }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Deploy with Helm
+      run: |
+        export KUBECONFIG=kubeconfig
+        helm upgrade --install ml-cicd-predictor ./helm \
+          --namespace ${{ inputs.namespace || 'ml-cicd-predictor' }} \
+          --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
+          --set image.tag=${{ github.sha }} \
+          --set image.pullPolicy=Always \
+          --set secrets.groqApiKey.name=api-secrets \
+          --wait \
+          --timeout 5m \
+          --atomic \
+          --debug
+
+    - name: Verify deployment
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl rollout status deployment/ml-cicd-predictor \
+          --namespace=${{ inputs.namespace || 'ml-cicd-predictor' }} \
+          --timeout=5m
+
+    - name: Get deployment info
+      run: |
+        export KUBECONFIG=kubeconfig
+        echo "### Deployment Info :rocket:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        kubectl get all -n ${{ inputs.namespace || 'ml-cicd-predictor' }} >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # ========== Deploy with kubectl (alternative) ==========
+  deploy-kubectl:
+    name: Deploy with kubectl
+    runs-on: ubuntu-latest
+    needs: build-image
+    if: github.event_name == 'workflow_dispatch' && inputs.alternative == 'kubectl'
+    environment:
+      name: ${{ inputs.environment || 'dev' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v4
+
+    - name: Configure Kubernetes context
+      run: |
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+
+    - name: Update deployment image
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl set image deployment/ml-cicd-predictor \
+          ml-cicd-predictor=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+          --namespace=${{ inputs.namespace || 'ml-cicd-predictor' }}
+
+    - name: Wait for rollout
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl rollout status deployment/ml-cicd-predictor \
+          --namespace=${{ inputs.namespace || 'ml-cicd-predictor' }} \
+          --timeout=5m
+
+  # ========== Rollback (manual) ==========
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'rollback'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v4
+
+    - name: Configure Kubernetes context
+      run: |
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+
+    - name: Helm rollback
+      run: |
+        export KUBECONFIG=kubeconfig
+        helm rollback ml-cicd-predictor \
+          --namespace ${{ inputs.namespace || 'ml-cicd-predictor' }} \
+          --wait \
+          --timeout 5m
