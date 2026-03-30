@@ -580,7 +580,24 @@ function displayResult(data, input, apiUrl) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prediction: data, input: input })
   })
-  .then(r => r.json())
+  .then(async r => {
+    let parsed = {};
+    try {
+      parsed = await r.json();
+    } catch {
+      parsed = {};
+    }
+
+    if (!r.ok) {
+      throw new Error(parsed.error || `HTTP ${r.status}`);
+    }
+
+    if (parsed.error) {
+      throw new Error(parsed.error);
+    }
+
+    return parsed;
+  })
   .then(parsed => {
     document.getElementById('llmSpinner').style.display = 'none';
     llmSummary.textContent = parsed.summary || '';
@@ -597,7 +614,7 @@ function displayResult(data, input, apiUrl) {
   })
   .catch(e => {
     document.getElementById('llmSpinner').style.display = 'none';
-    llmSummary.innerHTML = `<span style="color:var(--fail)">AI analysis failed: ${e.message}. Check your .env file has a valid GROQ_API_KEY.</span>`;
+    llmSummary.innerHTML = `<span style="color:var(--fail)">AI analysis unavailable: ${e.message}</span>`;
   });
  
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
