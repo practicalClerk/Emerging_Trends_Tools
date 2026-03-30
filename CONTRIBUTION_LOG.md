@@ -17,3 +17,5 @@ This document tracks the cloud infrastructure additions to the ML CI/CD Predicto
 - [x] GitHub Actions Workflows
 
 _Last updated: 2026-03-30_
+
+### Commit 1: Kubernetes Deployment Added
