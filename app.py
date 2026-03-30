@@ -2,8 +2,8 @@
 ML-Based CI/CD Pipeline Failure Prediction Service
 Flask REST API for predicting build outcomes before execution
 """
- 
-from flask import Flask, request, jsonify
+
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import joblib
 import numpy as np
@@ -14,22 +14,24 @@ import json
 import os
 from groq import Groq
 from dotenv import load_dotenv
- 
+
 # Load environment variables from .env file
 load_dotenv()
- 
+
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)  # Allow frontend (HTML file) to call this API
- 
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
- 
+
 PREDICTION_LOG_FILE = "predictions_log.json"
- 
-# Initialize Groq client (reads GROQ_API_KEY from .env automatically)
-groq_client = Groq()
+APP_PORT = int(os.getenv("PORT", "5050"))
+
+# Initialize Groq client only if key is available.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 # Initialize Redis cache
 from redis_cache import get_cache
@@ -75,34 +77,34 @@ def load_models():
         return False
 
 load_models()
- 
- 
+
+
 def encode_time_of_commit(value):
     """Encode commit hour while accepting both numeric and string input."""
     try:
         hour = int(value)
     except (TypeError, ValueError):
         raise ValueError("time_of_commit must be an integer hour between 0 and 23")
- 
+
     if hour < 0 or hour > 23:
         raise ValueError("time_of_commit must be between 0 and 23")
- 
+
     if label_encoder is None:
         return hour
- 
+
     for candidate in (hour, str(hour)):
         try:
             return int(label_encoder.transform([candidate])[0])
         except Exception:
             continue
- 
+
     return hour
- 
- 
+
+
 def append_prediction_log(entry):
     """Append a prediction entry to the JSON log file in the project root."""
     log_data = []
- 
+
     if os.path.exists(PREDICTION_LOG_FILE):
         try:
             with open(PREDICTION_LOG_FILE, 'r', encoding='utf-8') as f:
@@ -111,13 +113,20 @@ def append_prediction_log(entry):
                     log_data = existing
         except Exception as e:
             logger.warning(f"Could not read existing prediction log. Starting a new file: {e}")
- 
+
     log_data.append(entry)
- 
+
     with open(PREDICTION_LOG_FILE, 'w', encoding='utf-8') as f:
         json.dump(log_data, f, indent=2)
- 
- 
+
+
+# ============ HOME ENDPOINT ============
+@app.route('/', methods=['GET'])
+def home():
+    """Serve the frontend interface."""
+    return send_from_directory('.', 'index.html')
+
+
 # ============ HEALTH CHECK ============
 @app.route('/health', methods=['GET'])
 def health():
@@ -127,14 +136,14 @@ def health():
         "service": "CI/CD Failure Predictor",
         "timestamp": datetime.now().isoformat()
     }), 200
- 
- 
+
+
 # ============ PREDICTION ENDPOINT ============
 @app.route('/predict', methods=['POST'])
 def predict():
     """
     Predict CI/CD build outcome
- 
+
     Input JSON:
     {
         "commit_size": 50,
@@ -146,7 +155,7 @@ def predict():
         "time_of_commit": 14,
         "build_time": 350.5
     }
- 
+
     Output:
     {
         "prediction": "PASS",
@@ -185,13 +194,13 @@ def predict():
             if feature == 'time_of_commit':
                 value = encode_time_of_commit(value)
             input_data.append(value)
- 
+
         X = pd.DataFrame([input_data], columns=feature_names)
         X_scaled = scaler.transform(X)
- 
+
         prediction = model.predict(X_scaled)[0]
         probability = model.predict_proba(X_scaled)[0]
- 
+
         failure_prob = probability[1]
         if failure_prob < 0.25:
             risk_level = "LOW"
@@ -201,7 +210,7 @@ def predict():
             risk_level = "HIGH"
         else:
             risk_level = "CRITICAL"
- 
+
         prediction_label = "FAIL" if prediction == 1 else "PASS"
         confidence = max(probability)
 
@@ -237,10 +246,10 @@ def predict():
             })
         except Exception as e:
             logger.warning(f"Prediction generated but failed to write JSON log: {e}")
- 
+
         logger.info(f"Prediction: {prediction_label} (risk: {risk_level}, prob: {failure_prob:.4f})")
         return jsonify(response), 200
- 
+
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except KeyError as e:
@@ -248,14 +257,14 @@ def predict():
     except Exception as e:
         logger.error(f"Prediction error: {e}")
         return jsonify({"error": str(e)}), 500
- 
- 
+
+
 # ============ BATCH PREDICTION ============
 @app.route('/predict-batch', methods=['POST'])
 def predict_batch():
     """
     Predict for multiple commits at once
- 
+
     Input: Array of commit metadata objects
     Output: Array of predictions
     """
@@ -263,7 +272,7 @@ def predict_batch():
         data = request.get_json()
         if not isinstance(data, list):
             return jsonify({"error": "Input must be a list of commits"}), 400
- 
+
         results = []
         for commit_data in data:
             input_data = []
@@ -274,18 +283,18 @@ def predict_batch():
                 if feature == 'time_of_commit':
                     value = encode_time_of_commit(value)
                 input_data.append(value)
- 
+
             X = pd.DataFrame([input_data], columns=feature_names)
             X_scaled = scaler.transform(X)
             prediction = model.predict(X_scaled)[0]
             probability = model.predict_proba(X_scaled)[0]
- 
+
             results.append({
                 "commit_id": commit_data.get("commit_id", "unknown"),
                 "prediction": "FAIL" if prediction == 1 else "PASS",
                 "failure_probability": round(probability[1], 4)
             })
- 
+
         try:
             append_prediction_log({
                 "endpoint": "/predict-batch",
@@ -295,16 +304,16 @@ def predict_batch():
             })
         except Exception as e:
             logger.warning(f"Batch prediction generated but failed to write JSON log: {e}")
- 
+
         return jsonify({"predictions": results}), 200
- 
+
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error(f"Batch prediction error: {e}")
         return jsonify({"error": str(e)}), 500
- 
- 
+
+
 # ============ FEATURE IMPORTANCE ============
 @app.route('/features', methods=['GET'])
 def features():
@@ -317,8 +326,8 @@ def features():
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
- 
- 
+
+
 # ============ PREDICTIONS LOG ============
 @app.route('/predictions-log', methods=['GET'])
 def predictions_log():
@@ -397,13 +406,13 @@ def s3_sync_models():
 def analyze():
     """
     Generate AI-powered analysis using Groq LLM.
- 
+
     Input JSON:
     {
         "prediction": { ...output from /predict... },
         "input": { ...original commit metadata... }
     }
- 
+
     Output:
     {
         "summary": "2-sentence risk analysis",
@@ -411,21 +420,24 @@ def analyze():
     }
     """
     try:
+        if groq_client is None:
+            return jsonify({"error": "GROQ_API_KEY is not configured on the server"}), 503
+
         data = request.get_json()
         if not data:
             return jsonify({"error": "No JSON data provided"}), 400
- 
+
         prediction = data.get('prediction', {})
         input_data = data.get('input', {})
- 
+
         prompt = f"""You are a senior DevOps engineer reviewing a CI/CD pipeline risk prediction.
- 
+
 Prediction Result:
 - Outcome: {prediction.get('prediction')}
 - Risk Level: {prediction.get('risk_level')}
 - Failure Probability: {round(prediction.get('failure_probability', 0) * 100, 1)}%
 - Confidence: {round(prediction.get('confidence', 0) * 100, 1)}%
- 
+
 Commit Metadata:
 - commit_size: {input_data.get('commit_size')} lines changed
 - files_changed: {input_data.get('files_changed')}
@@ -435,45 +447,45 @@ Commit Metadata:
 - author_experience: {input_data.get('author_experience')} past commits
 - time_of_commit: {input_data.get('time_of_commit')}:00h
 - build_time: {input_data.get('build_time')}s
- 
+
 Write a brief 2-sentence summary of the risk, then provide exactly 4 specific and actionable steps the developer should take before or after running the pipeline.
- 
+
 Respond ONLY with valid JSON in this exact format, no markdown, no explanation:
 {{"summary": "your 2 sentence summary here", "steps": ["step 1", "step 2", "step 3", "step 4"]}}"""
- 
+
         chat = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=500,
             temperature=0.4
         )
- 
+
         raw = chat.choices[0].message.content.strip()
         # Strip markdown fences if model wraps in ```json
         raw = raw.replace("```json", "").replace("```", "").strip()
         result = json.loads(raw)
- 
+
         logger.info("✅ Groq analysis generated successfully")
         return jsonify(result), 200
- 
+
     except json.JSONDecodeError as e:
         logger.error(f"Groq returned invalid JSON: {e}")
         return jsonify({"error": "AI returned invalid response, try again"}), 500
     except Exception as e:
         logger.error(f"Groq analysis error: {e}")
         return jsonify({"error": str(e)}), 500
- 
- 
+
+
 # ============ ERROR HANDLERS ============
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({"error": "Endpoint not found"}), 404
- 
+
 @app.errorhandler(500)
 def internal_error(error):
     return jsonify({"error": "Internal server error"}), 500
- 
- 
+
+
 if __name__ == '__main__':
     if model is not None:
         # Initialize Prometheus metrics
@@ -484,6 +496,7 @@ if __name__ == '__main__':
         print("=" * 60)
         print(f"Features: {', '.join(feature_names)}")
         print("\nEndpoints:")
+        print("  GET  /                  - Home/Frontend")
         print("  POST /predict          - Single prediction")
         print("  POST /predict-batch    - Batch predictions")
         print("  POST /analyze          - Groq AI analysis")
@@ -495,10 +508,9 @@ if __name__ == '__main__':
         print("  POST /cache-clear      - Clear prediction cache")
         print("  GET  /s3-model-info    - S3 model storage info")
         print("  POST /s3-sync-models   - Sync models from S3")
-        print("\nStarting server on http://0.0.0.0:5000")
+        print(f"\nStarting server on http://0.0.0.0:{APP_PORT}")
         print("=" * 60 + "\n")
 
-        app.run(host='0.0.0.0', port=5000, debug=False)
+        app.run(host='0.0.0.0', port=APP_PORT, debug=False)
     else:
         print("❌ Model failed to load. Cannot start API.")
- 

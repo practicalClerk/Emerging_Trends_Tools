@@ -7,7 +7,7 @@ import requests
 import json
 import sys
 
-BASE_URL = "http://localhost:5000"
+BASE_URL = "http://localhost:5050"
 
 # Test data scenarios
 test_scenarios = [
@@ -105,43 +105,43 @@ def test_features():
 def test_predictions():
     """Test prediction scenarios"""
     print_header("TEST 3: Prediction Scenarios")
-    
+
     results = []
     for i, scenario in enumerate(test_scenarios, 1):
         print(f"\nScenario {i}: {scenario['name']}")
         print("-" * 70)
-        
+
         try:
             response = requests.post(
                 f"{BASE_URL}/predict",
                 json=scenario['data'],
                 timeout=5
             )
-            
+
             if response.status_code == 200:
                 result = response.json()
-                
+
                 # Format output
                 prediction = result['prediction']
                 risk = result['risk_level']
                 prob = result['failure_probability']
                 conf = result['confidence']
                 recommendation = result['recommendation']
-                
+
                 print(f"Input commit metrics:")
                 print(f"  Commit size: {scenario['data']['commit_size']} lines")
                 print(f"  Files changed: {scenario['data']['files_changed']}")
                 print(f"  Test coverage: {scenario['data']['test_coverage']}%")
                 print(f"  Past failures: {scenario['data']['past_failures']}")
                 print(f"  Dependency changes: {scenario['data']['dependency_changes']}")
-                
+
                 print(f"\nPrediction Result:")
                 print(f"  {recommendation}")
                 print(f"  Prediction: {prediction}")
                 print(f"  Risk Level: {risk}")
                 print(f"  Failure Probability: {prob:.2%}")
                 print(f"  Confidence: {conf:.2%}")
-                
+
                 results.append({
                     'scenario': scenario['name'],
                     'prediction': prediction,
@@ -154,20 +154,20 @@ def test_predictions():
                     'scenario': scenario['name'],
                     'status': '❌ FAILED'
                 })
-                
+
         except Exception as e:
             print(f"❌ Exception: {e}")
             results.append({
                 'scenario': scenario['name'],
                 'status': f'❌ {str(e)}'
             })
-    
+
     return results
 
 def test_batch_prediction():
     """Test batch prediction"""
     print_header("TEST 4: Batch Prediction")
-    
+
     batch_data = [
         {
             "commit_id": "abc123",
@@ -192,14 +192,14 @@ def test_batch_prediction():
             "build_time": 700.0
         }
     ]
-    
+
     try:
         response = requests.post(
             f"{BASE_URL}/predict-batch",
             json=batch_data,
             timeout=5
         )
-        
+
         if response.status_code == 200:
             result = response.json()
             print(f"✅ Batch prediction successful")
@@ -217,7 +217,7 @@ def test_batch_prediction():
 def test_invalid_input():
     """Test error handling"""
     print_header("TEST 5: Error Handling")
-    
+
     # Missing required field
     print("\nTest 5a: Missing required field")
     invalid_data = {
@@ -225,7 +225,7 @@ def test_invalid_input():
         "files_changed": 3
         # Missing other required fields
     }
-    
+
     try:
         response = requests.post(
             f"{BASE_URL}/predict",
@@ -239,7 +239,7 @@ def test_invalid_input():
             print(f"❌ Should have rejected invalid input")
     except Exception as e:
         print(f"Exception: {e}")
-    
+
     # Empty JSON
     print("\nTest 5b: Empty JSON")
     try:
@@ -259,7 +259,7 @@ def main():
     print("\n" + "█" * 70)
     print("█  ML-Based CI/CD Pipeline Failure Prediction - API Tests")
     print("█" * 70)
-    
+
     # Check if server is running
     try:
         requests.get(f"{BASE_URL}/health", timeout=2)
@@ -267,25 +267,23 @@ def main():
         print("\n❌ ERROR: Flask server not running!")
         print("   Start the server with: python app.py")
         sys.exit(1)
-    
+
     # Run tests
     test_health()
     test_features()
     prediction_results = test_predictions()
     test_batch_prediction()
     test_invalid_input()
-    
+
     # Summary
     print_header("TEST SUMMARY")
     print("\nPrediction Test Results:")
     for result in prediction_results:
         print(f"  {result['scenario']:50s} {result['status']}")
-    
+
     print("\n" + "█" * 70)
     print("█  All tests completed!")
     print("█" * 70 + "\n")
 
 if __name__ == "__main__":
     main()
-
-

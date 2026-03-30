@@ -31,11 +31,11 @@ jobs:
           COMMIT_HASH=$(git rev-parse HEAD | cut -c1-8)
           COMMIT_SIZE=$(git show --stat | grep -E '^\s+[0-9]+\s+files?' | awk '{sum=0; for(i=4;i<NF;i++) if($i ~ /^[0-9]+\+/) sum+=$(i); print sum}' || echo "50")
           FILES_CHANGED=$(git diff HEAD~ --name-only | wc -l || echo "3")
-          
+
           echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
           echo "commit_size=$COMMIT_SIZE" >> $GITHUB_OUTPUT
           echo "files_changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
-          
+
           echo "📊 Commit Metadata:"
           echo "   Hash: $COMMIT_HASH"
           echo "   Size: $COMMIT_SIZE lines"
@@ -99,14 +99,14 @@ jobs:
           import joblib
           import pandas as pd
           import json
-          
+
           # Load model and preprocessing objects
           model = joblib.load('random_forest_model.pkl')
           scaler = joblib.load('scaler.pkl')
           label_encoder = joblib.load('label_encoder.pkl')
           with open('feature_names.txt', 'r') as f:
               feature_names = f.read().strip().split(',')
-          
+
           # Create sample input (in real scenario, extract from actual commit)
           input_data = {
               'commit_size': int(${{ needs.extract-metadata.outputs.commit_size }}),
@@ -118,19 +118,19 @@ jobs:
               'time_of_commit': 14,    # Hour of commit
               'build_time': 320.0      # Previous build time average
           }
-          
+
           # Prepare features
           X = pd.DataFrame([input_data], columns=feature_names)
           X_scaled = scaler.transform(X)
-          
+
           # Predict
           prediction = model.predict(X_scaled)[0]
           probability = model.predict_proba(X_scaled)[0]
-          
+
           # Format output
           prediction_label = "FAIL" if prediction == 1 else "PASS"
           failure_prob = probability[1]
-          
+
           if failure_prob < 0.25:
               risk_level = "LOW"
           elif failure_prob < 0.50:
@@ -139,11 +139,11 @@ jobs:
               risk_level = "HIGH"
           else:
               risk_level = "CRITICAL"
-          
+
           print(f"🤖 ML Prediction: {prediction_label}")
           print(f"📊 Failure Probability: {failure_prob:.2%}")
           print(f"⚠️  Risk Level: {risk_level}")
-          
+
           # Set outputs
           with open('prediction.json', 'w') as f:
               json.dump({
@@ -151,13 +151,13 @@ jobs:
                   'risk_level': risk_level,
                   'failure_probability': round(failure_prob, 4)
               }, f)
-          
+
           EOF
-          
+
           # Export outputs
           PREDICTION=$(python -c "import json; d=json.load(open('prediction.json')); print(d['prediction'])")
           RISK_LEVEL=$(python -c "import json; d=json.load(open('prediction.json')); print(d['risk_level'])")
-          
+
           echo "prediction=$PREDICTION" >> $GITHUB_OUTPUT
           echo "risk_level=$RISK_LEVEL" >> $GITHUB_OUTPUT
 
@@ -165,11 +165,11 @@ jobs:
         run: |
           PREDICTION="${{ steps.cloud-predict.outputs.prediction || steps.predict.outputs.prediction }}"
           RISK_LEVEL="${{ steps.cloud-predict.outputs.risk_level || steps.predict.outputs.risk_level }}"
-          
+
           echo "🔮 ML Pipeline Decision Gate"
           echo "Prediction: $PREDICTION"
           echo "Risk Level: $RISK_LEVEL"
-          
+
           if [ "$PREDICTION" = "FAIL" ]; then
               echo ""
               echo "🔴 HIGH FAILURE RISK DETECTED - STOPPING PIPELINE"
@@ -201,7 +201,9 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest tests/ -v || true
+          python app.py &
+          sleep 5
+          python test_api.py
 
       - name: Build Docker image
         run: |
