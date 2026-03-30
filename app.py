@@ -37,21 +37,44 @@ cache = get_cache()
 
 # Initialize Prometheus metrics
 from prometheus_metrics import MetricsCollector, init_flask_metrics
- 
+
+# Initialize S3 model loader
+from s3_model_loader import try_load_models_from_s3
+
 # Load pre-trained model and preprocessing objects
-try:
-    model = joblib.load('random_forest_model.pkl')
-    scaler = joblib.load('scaler.pkl')
-    label_encoder = joblib.load('label_encoder.pkl')
-    with open('feature_names.txt', 'r') as f:
-        feature_names = f.read().strip().split(',')
-    logger.info("✅ Model and preprocessing objects loaded successfully")
-except Exception as e:
-    logger.error(f"❌ Failed to load model: {e}")
-    model = None
-    scaler = None
-    label_encoder = None
-    feature_names = []
+def load_models():
+    """Load models with S3 fallback"""
+    global model, scaler, label_encoder, feature_names
+
+    # Try local files first
+    model_files_exist = all(os.path.exists(f) for f in [
+        'random_forest_model.pkl',
+        'scaler.pkl',
+        'label_encoder.pkl',
+        'feature_names.txt'
+    ])
+
+    if not model_files_exist:
+        logger.info("Local model files missing, attempting S3 download...")
+        try_load_models_from_s3()
+
+    try:
+        model = joblib.load('random_forest_model.pkl')
+        scaler = joblib.load('scaler.pkl')
+        label_encoder = joblib.load('label_encoder.pkl')
+        with open('feature_names.txt', 'r') as f:
+            feature_names = f.read().strip().split(',')
+        logger.info("✅ Model and preprocessing objects loaded successfully")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to load model: {e}")
+        model = None
+        scaler = None
+        label_encoder = None
+        feature_names = []
+        return False
+
+load_models()
  
  
 def encode_time_of_commit(value):
@@ -339,6 +362,36 @@ def cache_clear():
         return jsonify({"error": str(e)}), 500
 
 
+# ============ S3 MODEL INFO ============
+@app.route('/s3-model-info', methods=['GET'])
+def s3_model_info():
+    """Get S3 model storage information."""
+    try:
+        from s3_model_loader import get_s3_loader
+        loader = get_s3_loader()
+        info = loader.get_model_info()
+        return jsonify(info), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/s3-sync-models', methods=['POST'])
+def s3_sync_models():
+    """Sync models from S3 to local storage."""
+    try:
+        from s3_model_loader import get_s3_loader
+        loader = get_s3_loader()
+        success = loader.download_all_models()
+        if success:
+            # Reload models
+            load_models()
+            return jsonify({"message": "Models synced and reloaded successfully"}), 200
+        else:
+            return jsonify({"error": "S3 sync failed"}), 503
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ============ GROQ AI ANALYSIS ============
 @app.route('/analyze', methods=['POST'])
 def analyze():
@@ -440,6 +493,8 @@ if __name__ == '__main__':
         print("  GET  /metrics          - Prometheus metrics")
         print("  GET  /cache-stats      - Redis cache statistics")
         print("  POST /cache-clear      - Clear prediction cache")
+        print("  GET  /s3-model-info    - S3 model storage info")
+        print("  POST /s3-sync-models   - Sync models from S3")
         print("\nStarting server on http://0.0.0.0:5000")
         print("=" * 60 + "\n")
 
