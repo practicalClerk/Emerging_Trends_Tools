@@ -3,7 +3,7 @@ ML-Based CI/CD Pipeline Failure Prediction Service
 Flask REST API for predicting build outcomes before execution
 """
  
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import joblib
 import numpy as np
@@ -90,6 +90,12 @@ def append_prediction_log(entry):
  
  
 # ============ HEALTH CHECK ============
+@app.route('/', methods=['GET'])
+def home():
+    """Serve the frontend interface."""
+    return send_from_directory('.', 'index.html')
+
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
