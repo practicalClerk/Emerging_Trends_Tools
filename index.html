@@ -4,22 +4,22 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>CI/CD Failure Predictor</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Merriweather:wght@400;700&display=swap" rel="stylesheet"/>
 <style>
   :root {
-    --bg: #0a0d12;
-    --surface: #111520;
-    --surface2: #161c2a;
-    --border: #1e2a40;
-    --accent: #00e5ff;
-    --accent2: #7c3aed;
-    --pass: #00e676;
-    --fail: #ff3d57;
-    --warn: #ffab00;
-    --text: #e2e8f0;
-    --muted: #64748b;
-    --mono: 'JetBrains Mono', monospace;
-    --sans: 'Space Grotesk', sans-serif;
+    --bg: #f7f3ea;
+    --surface: #fffdf9;
+    --surface2: #f1eadf;
+    --border: #d7cab8;
+    --accent: #2f6f53;
+    --accent2: #7f5a3a;
+    --pass: #2f6f53;
+    --fail: #b13a2f;
+    --warn: #a06a1d;
+    --text: #2b241b;
+    --muted: #6f6355;
+    --mono: 'Lato', sans-serif;
+    --sans: 'Lato', sans-serif;
   }
  
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -33,34 +33,14 @@
   }
  
   body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
-    z-index: 0;
-    pointer-events: none;
+    content: none;
   }
  
   .glow-orb {
-    position: fixed;
-    width: 600px; height: 600px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(0,229,255,0.06) 0%, transparent 70%);
-    top: -200px; left: -200px;
-    pointer-events: none; z-index: 0;
-    animation: drift 12s ease-in-out infinite alternate;
+    display: none;
   }
   .glow-orb2 {
-    position: fixed;
-    width: 400px; height: 400px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(124,58,237,0.07) 0%, transparent 70%);
-    bottom: -100px; right: -100px;
-    pointer-events: none; z-index: 0;
-    animation: drift2 15s ease-in-out infinite alternate;
+    display: none;
   }
   @keyframes drift { to { transform: translate(60px, 40px); } }
   @keyframes drift2 { to { transform: translate(-40px, -60px); } }
@@ -83,12 +63,16 @@
   .logo { display: flex; align-items: center; gap: 12px; }
   .logo-icon {
     width: 40px; height: 40px;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    background: var(--surface2);
+    border: 1px solid var(--border);
     border-radius: 10px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent2);
+    font-family: var(--mono);
   }
-  .logo-text h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; color: #fff; }
+  .logo-text h1 { font-size: 24px; font-weight: 700; letter-spacing: 0; color: var(--text); font-family: 'Merriweather', serif; }
   .logo-text p { font-size: 12px; color: var(--muted); font-family: var(--mono); }
  
   .tabs {
@@ -130,7 +114,8 @@
     transition: border-color 0.2s;
   }
   .field:hover { border-color: rgba(0,229,255,0.3); }
-  .field:focus-within { border-color: var(--accent); }
+  .field:hover { border-color: #c2b09a; }
+  .field:focus-within { border-color: var(--accent2); }
   .field label {
     display: block;
     font-family: var(--mono);
@@ -188,15 +173,15 @@
   .predict-btn {
     width: 100%;
     padding: 16px;
-    background: linear-gradient(135deg, var(--accent), #00b8d4);
-    color: #0a0d12;
+    background: var(--accent);
+    color: #fff;
     border: none; border-radius: 12px;
     font-family: var(--sans);
     font-size: 16px; font-weight: 700;
     cursor: pointer; letter-spacing: 0.5px;
     transition: all 0.2s;
   }
-  .predict-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 32px rgba(0,229,255,0.25); }
+  .predict-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(47,111,83,0.2); }
   .predict-btn:active { transform: translateY(0); }
   .predict-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
  
@@ -264,7 +249,7 @@
   .llm-section h3 {
     font-size: 13px; font-family: var(--mono);
     text-transform: uppercase; letter-spacing: 1px;
-    color: var(--accent); margin-bottom: 16px;
+    color: var(--accent2); margin-bottom: 16px;
     display: flex; align-items: center; gap: 8px;
   }
   .llm-content { font-size: 14px; line-height: 1.8; color: var(--text); }
@@ -275,7 +260,7 @@
     padding: 12px 16px;
     background: var(--surface2);
     border-radius: 8px;
-    border-left: 3px solid var(--accent);
+    border-left: 3px solid var(--accent2);
     font-size: 13px; line-height: 1.6;
     animation: slideIn 0.3s ease both;
   }
@@ -296,7 +281,7 @@
   .clear-btn:hover { border-color: var(--fail); color: var(--fail); }
  
   .history-empty { text-align: center; padding: 80px 40px; color: var(--muted); font-family: var(--mono); font-size: 14px; }
-  .history-empty .icon { font-size: 48px; margin-bottom: 16px; }
+  .history-empty .icon { font-size: 48px; margin-bottom: 16px; display: none; }
  
   .history-list { display: flex; flex-direction: column; gap: 12px; }
   .history-item {
@@ -356,8 +341,8 @@
     <div class="logo">
       <div class="logo-icon">⚡</div>
       <div class="logo-text">
-        <h1>CI/CD Predictor</h1>
-        <p>ML-based pipeline failure prediction</p>
+        <h1>Build Risk Assistant</h1>
+        <p>Predict build risk before running the full pipeline</p>
       </div>
     </div>
     <div class="tabs">
@@ -368,7 +353,7 @@
  
   <!-- PREDICT VIEW -->
   <div class="view active" id="view-predict">
-    <div class="section-title">// commit metadata</div>
+    <div class="section-title">Commit details</div>
  
     <div class="form-grid">
       <div class="field">
@@ -418,12 +403,12 @@
       <label>Flask API URL</label>
       <input type="text" id="api_url" value="http://localhost:5050" placeholder="http://localhost:5050"/>
       <div class="config-hint">
-        Make sure your Flask server is running · Groq key is configured in <code>.env</code> on the server
+        Keep the backend running first. AI analysis works when a valid key is present in <code>.env</code>.
       </div>
     </div>
  
     <button class="predict-btn" id="predictBtn" onclick="runPrediction()">
-      ⚡ Run Prediction
+      Run prediction
     </button>
  
     <div class="error-msg" id="errorMsg"></div>
@@ -467,7 +452,7 @@
       </div>
  
       <div class="llm-section">
-        <h3>✦ AI Analysis <span class="spinner" id="llmSpinner" style="display:none"></span></h3>
+        <h3>Analysis Notes <span class="spinner" id="llmSpinner" style="display:none"></span></h3>
         <div class="llm-content" id="llmSummary"></div>
         <div class="steps-list" id="stepsList"></div>
       </div>
@@ -497,7 +482,7 @@ function switchTab(tab, e) {
  
 function showError(msg) {
   const el = document.getElementById('errorMsg');
-  el.textContent = '⚠ ' + msg;
+  el.textContent = 'Notice: ' + msg;
   el.classList.add('visible');
 }
 function hideError() {
@@ -521,7 +506,7 @@ async function runPrediction() {
  
   const btn = document.getElementById('predictBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Predicting...';
+  btn.innerHTML = '<span class="spinner"></span> Checking...';
  
   try {
     // Step 1 — get ML prediction from Flask
@@ -549,7 +534,7 @@ async function runPrediction() {
     showError(e.message || 'Could not connect to Flask API. Make sure it is running on localhost:5050.');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '⚡ Run Prediction';
+    btn.innerHTML = 'Run prediction';
   }
 }
  
@@ -561,7 +546,7 @@ function displayResult(data, input, apiUrl) {
   const header = document.getElementById('resultHeader');
   header.className = 'result-header ' + data.prediction;
  
-  document.getElementById('verdictIcon').textContent = isPass ? '🟢' : '🔴';
+  document.getElementById('verdictIcon').textContent = isPass ? 'OK' : 'Risk';
   document.getElementById('verdictLabel').textContent = data.prediction;
   document.getElementById('verdictLabel').className = 'verdict-label ' + data.prediction;
   document.getElementById('verdictSub').textContent = data.recommendation || '';
@@ -628,7 +613,7 @@ function renderHistory() {
   const history = getHistory();
  
   if (!history.length) {
-    container.innerHTML = `<div class="history-empty"><div class="icon">📭</div>No predictions yet.<br>Run your first prediction to see history here.</div>`;
+    container.innerHTML = `<div class="history-empty"><div class="icon"></div>No predictions yet.<br>Run your first prediction to see history here.</div>`;
     return;
   }
  
