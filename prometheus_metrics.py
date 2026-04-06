@@ -210,16 +210,18 @@ def init_flask_metrics(app):
     @app.before_request
     def before_request():
         """Record request start time"""
-        flask.request.start_time = time.time()
+        from flask import request
+        request.start_time = time.time()
 
     @app.after_request
     def after_request(response):
         """Record request metrics"""
-        if hasattr(flask.request, 'start_time'):
-            duration = time.time() - flask.request.start_time
+        from flask import request
+        if hasattr(request, 'start_time'):
+            duration = time.time() - request.start_time
             MetricsCollector.record_http_request(
-                method=flask.request.method,
-                endpoint=flask.request.endpoint or 'unknown',
+                method=request.method,
+                endpoint=request.endpoint or 'unknown',
                 status=response.status_code,
                 duration=duration
             )
